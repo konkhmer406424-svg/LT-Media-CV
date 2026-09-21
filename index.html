@@ -2438,26 +2438,26 @@ function buildZip(files){            // files: [{ name:string, data:Uint8Array }
 
 const JPG_TOP_MARGIN_PX = 16;   // extra white space above the CV in JPG exports (raise for more)
 const IS_APPLE_WEBKIT = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-// Draws a repeated diagonal watermark over the finished image (canvas text, so it can't be missed or cropped out).
+// Draws two small diagonal watermarks (upper-left and lower-right area) on the finished image.
+// Canvas text, so it is baked into the JPG. Size/position are set by the numbers below.
+const WATERMARK_SIZE = 0.034;          // font size as a fraction of image width (smaller = smaller text)
+const WATERMARK_SPOTS = [ [0.34, 0.30], [0.66, 0.70] ];   // [x, y] as fractions of width / height
 function drawWatermark(canvas, text){
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
-  const fs = Math.round(w * 0.05);
+  const fs = Math.round(w * WATERMARK_SIZE);
   ctx.save();
-  ctx.translate(w / 2, h / 2);
-  ctx.rotate(-Math.PI / 6);
   ctx.font = '700 ' + fs + 'px -apple-system, "Segoe UI", Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(128,128,128,0.24)';
-  const stepX = ctx.measureText(text).width + fs * 2.4;
-  const stepY = fs * 3.4;
-  const half = Math.hypot(w, h) / 2 + stepX;
-  let row = 0;
-  for(let y = -half; y <= half; y += stepY, row++){
-    const shift = (row % 2) ? stepX / 2 : 0;
-    for(let x = -half + shift; x <= half; x += stepX) ctx.fillText(text, x, y);
-  }
+  ctx.fillStyle = 'rgba(128,128,128,0.28)';
+  WATERMARK_SPOTS.forEach(([fx, fy])=>{
+    ctx.save();
+    ctx.translate(w * fx, h * fy);
+    ctx.rotate(-Math.PI / 6);
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  });
   ctx.restore();
 }
 async function captureJpg(node, wmText){
