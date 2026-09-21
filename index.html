@@ -800,10 +800,12 @@
     #printBothWrap .multi-tag{background:#fff !important;}
     .no-print{display:none !important;}
     .app{display:block;}
-    .preview-wrap{padding:0;display:block;max-height:none;overflow:visible;}
+    .preview-wrap{padding:0 !important;display:block;max-height:none;overflow:visible;}
+    /* Keep the same left/right/top padding as the on-screen preview (A4 = 794px = the preview width),
+       so the PDF looks like what you see. Only the bottom padding is dropped so it can't spill onto an extra page. */
     #resume{
       box-shadow:none; width:auto; min-height:0;
-      margin:0; padding:0 !important;
+      margin:0; padding-bottom:0 !important;
     }
     /* Plain float, no forced full-page min-height. The earlier float+min-height(297mm)
        combo pushed the whole sidebar onto a blank next page the instant it overflowed
@@ -824,7 +826,9 @@
        floated sidebar overflowed onto a second, blank-looking page. !important overrides that inline
        value. 270mm keeps the sidebar colour running almost to the bottom of page 1 with a safety gap;
        lower it (e.g. 260mm) if some browser still adds an empty page. */
-    #resume.t2 .side, #resume.t3 .side, #resume.t7 .side, #resume.t15 .side, #resume.t19 .side{ min-height:270mm !important; }
+    #resume.t2 .side, #resume.t3 .side, #resume.t7 .side, #resume.t15 .side, #resume.t19 .side{ min-height:258mm !important; }   /* 270mm before; lowered because page 1 now has an 8mm top margin */
+    /* Sidebar templates: keep the coloured sidebar off the left paper edge */
+    #resume.t2, #resume.t3, #resume.t7, #resume.t15, #resume.t19{ margin-left:10mm !important; }
     #resume.t2 .main{ margin-left:250px; }
     #resume.t3 .main{ margin-left:228px; }
     #resume.t7 .main{ margin-left:210px; }
@@ -834,7 +838,7 @@
       size:A4; margin:12mm 0;
     }
     @page :first{
-      margin-top:0;
+      margin-top:6mm;   /* + the template's own top padding (~9mm) = ~15mm on page 1; later pages use the 12mm above */
     }
     #resume.cl4 .letter-head{ margin:0 0 20px; padding:0; background:none; }
     body.printing-both .preview-wrap{display:none !important;}
@@ -843,7 +847,7 @@
     #printBothWrap > div:last-child{page-break-after:auto;}
   }
   #printBothWrap{display:none;}
-  @media (max-width:900px){
+  @media screen and (max-width:900px){
     .app{grid-template-columns:1fr;}
     .resizer{display:none;}
     .editor{max-height:none;border-right:none;border-bottom:1px solid var(--line);}
@@ -1243,7 +1247,12 @@
       <div class="multi-grid" id="multiCvGrid"></div>
       <div class="multi-group-title">Cover Letter — <span id="multiClCount">0</span> selected</div>
       <div class="multi-grid" id="multiClGrid"></div>
-      <label class="multi-opt"><input type="checkbox" id="multiLabelChk" checked> បង្ហាញឈ្មោះទម្រង់នៅជ្រុងទំព័រ / Show template name on each page</label>
+      <label class="multi-opt"><input type="checkbox" id="multiLabelChk" checked> បង្ហាញឈ្មោះទម្រង់នៅជ្រុងទំព័រ (តែពេលជ្រើស ២ ទម្រង់ឡើងទៅ) / Show template name on each page (only when 2+ templates)</label>
+      <div id="multiWmBox" style="display:none;margin-top:6px;">
+        <label class="multi-opt" style="margin-bottom:6px;"><input type="checkbox" id="multiWmChk" checked> ដាក់ Watermark លើ JPG (គម្រូសម្រាប់ភ្ញៀវមើល) / Add a watermark to JPG (sample for the client)</label>
+        <input type="text" id="multiWmText" maxlength="30" value="SAMPLE" aria-label="Watermark text"
+          style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;font-weight:600;letter-spacing:.08em;padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink);">
+      </div>
     </div>
     <div class="multi-foot">
       <button type="button" class="multi-cancel" id="multiCancelBtn">បិទ / Cancel</button>
@@ -2277,6 +2286,8 @@ function updateMultiCount(){
   $('multiFmtNote').textContent = fmt === 'jpg'
     ? 'JPG: ទម្រង់នីមួយៗជារូបភាពមួយ (ជា .zip បើច្រើនជាងមួយ)។ CV វែងលើសមួយទំព័រ នឹងជារូបភាពវែងមួយ។ / One image per template (zipped if more than one). A CV longer than one page becomes one tall image.'
     : 'PDF: ទម្រង់នីមួយៗជាទំព័រផ្សេងគ្នាក្នុង PDF តែមួយ (Print → Save as PDF)។ / One PDF, each template on its own page (Print → Save as PDF).';
+  $('multiWmBox').style.display = fmt === 'jpg' ? 'block' : 'none';
+  $('multiWmText').disabled = !$('multiWmChk').checked;
   const nCv = multiChecked('cv').length, nCl = multiChecked('cl').length;
   $('multiCvCount').textContent = nCv;
   $('multiClCount').textContent = nCl;
@@ -2289,6 +2300,10 @@ function updateMultiCount(){
 function openMultiPicker(fmt){
   hideDownloadChoice();
   buildMultiPicker();
+  try{
+    const saved = JSON.parse(localStorage.getItem('cvBuilderWatermark_v1') || 'null');
+    if(saved){ $('multiWmChk').checked = saved.on !== false; if(typeof saved.text === 'string' && saved.text.trim()) $('multiWmText').value = saved.text; }
+  }catch(e){}
   const fr = document.querySelector('#multiTplOverlay input[name="multiFmt"][value="' + (fmt === 'jpg' ? 'jpg' : 'pdf') + '"]');
   if(fr) fr.checked = true;
   // start with the template currently being edited ticked
@@ -2421,14 +2436,43 @@ function buildZip(files){            // files: [{ name:string, data:Uint8Array }
   return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type:'application/zip' });
 }
 
+const JPG_TOP_MARGIN_PX = 16;   // extra white space above the CV in JPG exports (raise for more)
 const IS_APPLE_WEBKIT = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-async function captureJpg(el){
-  const opts = { quality: 0.95, pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: false };
-  if(IS_APPLE_WEBKIT) await htmlToImage.toJpeg(el, opts);   // Safari warm-up: first render can come out blank
-  return htmlToImage.toJpeg(el, opts);
+// Draws a repeated diagonal watermark over the finished image (canvas text, so it can't be missed or cropped out).
+function drawWatermark(canvas, text){
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const fs = Math.round(w * 0.05);
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-Math.PI / 6);
+  ctx.font = '700 ' + fs + 'px -apple-system, "Segoe UI", Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(128,128,128,0.24)';
+  const stepX = ctx.measureText(text).width + fs * 2.4;
+  const stepY = fs * 3.4;
+  const half = Math.hypot(w, h) / 2 + stepX;
+  let row = 0;
+  for(let y = -half; y <= half; y += stepY, row++){
+    const shift = (row % 2) ? stepX / 2 : 0;
+    for(let x = -half + shift; x <= half; x += stepX) ctx.fillText(text, x, y);
+  }
+  ctx.restore();
 }
+async function captureJpg(node, wmText){
+  const opts = { pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: false };
+  if(IS_APPLE_WEBKIT) await htmlToImage.toCanvas(node, opts);   // Safari warm-up: first render can come out blank
+  const canvas = await htmlToImage.toCanvas(node, opts);
+  if(wmText) drawWatermark(canvas, wmText);
+  return canvas.toDataURL('image/jpeg', 0.95);
+}
+const SIDEBAR_TEMPLATES = ['t2', 't3', 't7', 't15', 't19'];
+const JPG_SIDEBAR_LEFT_PX = 40;   // white space left of the coloured sidebar in JPG exports
 
 async function downloadTemplatesAsJpg(cvIds, clIds, showTag){
+  const wmText = ($('multiWmChk').checked ? $('multiWmText').value.trim() : '');
+  try{ localStorage.setItem('cvBuilderWatermark_v1', JSON.stringify({ on: $('multiWmChk').checked, text: $('multiWmText').value })); }catch(e){}
   const btn = $('multiDownloadBtn');
   const pages = collectTemplatePages(cvIds, clIds, showTag);
   const base = safeFileName(profileIndex.names[profileIndex.active] || state.fullName || 'CV');
@@ -2452,9 +2496,16 @@ async function downloadTemplatesAsJpg(cvIds, clIds, showTag){
       });
       el.querySelectorAll('.head-block.no-photo').forEach(hb => { hb.style.gap = '0'; });
       stage.innerHTML = '';
-      stage.appendChild(el);
+      const frame = document.createElement('div');            // white frame = extra top margin in the JPG
+      frame.style.cssText = 'background:#fff;padding-top:' + JPG_TOP_MARGIN_PX + 'px;';
+      if(pages[i].kind === 'cv' && SIDEBAR_TEMPLATES.indexOf(pages[i].id) !== -1){
+        frame.style.paddingLeft = JPG_SIDEBAR_LEFT_PX + 'px';                 // sidebar no longer touches the left edge
+        el.style.width = (stage.clientWidth - JPG_SIDEBAR_LEFT_PX) + 'px';   // keep the total image width the same
+      }
+      frame.appendChild(el);
+      stage.appendChild(frame);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      const dataUrl = await captureJpg(el);
+      const dataUrl = await captureJpg(frame, wmText);
       files.push({ name: jpgFileName(pages[i], i, base), dataUrl });
     }
     if(files.length === 1){
@@ -2480,7 +2531,8 @@ async function downloadTemplatesAsJpg(cvIds, clIds, showTag){
 $('multiDownloadBtn').addEventListener('click', ()=>{
   const cvIds = multiChecked('cv'), clIds = multiChecked('cl');
   if(!cvIds.length && !clIds.length) return;
-  const showTag = $('multiLabelChk').checked;
+  // The name tag only makes sense for comparing several templates; a single template stays clean.
+  const showTag = $('multiLabelChk').checked && (cvIds.length + clIds.length) > 1;
   if(multiFormat() === 'jpg'){
     downloadTemplatesAsJpg(cvIds, clIds, showTag);
   } else {
